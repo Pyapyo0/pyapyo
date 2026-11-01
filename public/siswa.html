@@ -48,9 +48,12 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .hint{color:var(--mu);font-size:.9rem;margin-bottom:6px}
 .res{font-weight:800;padding:10px 12px;border-radius:10px;margin-top:10px}
 .res.ok{background:var(--okb);color:var(--ok)}.res.bad{background:var(--badb);color:var(--bad)}.res.n{background:var(--bg);color:var(--mu)}
-#pickM{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;z-index:60}
-#pickM .card{max-width:420px;width:100%;text-align:center}
-#pickM button{width:100%;margin-top:8px}
+#pickM{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;padding:0 12px max(12px,env(safe-area-inset-bottom));z-index:60;pointer-events:none}
+#pickM .card{pointer-events:auto;max-width:420px;width:100%;text-align:center;margin:0;padding:10px 14px 12px;box-shadow:0 -6px 24px rgba(0,0,0,.28);border:2px solid var(--ac)}
+#pickM .big{display:none}
+#pickM .sub{font-size:.82rem}
+#pickM button{width:100%;margin-top:6px;min-height:42px;padding:8px 14px}
+body.picking{padding-bottom:230px}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:99px;font-weight:700;z-index:70;max-width:90vw;text-align:center}
 .big{font-size:2.4rem;font-weight:900}
 .grid .ans{background:var(--ac);border-color:var(--ac);color:var(--act)}
@@ -201,7 +204,7 @@ async function join(resume){
   try{
     const tok=old&&old.code===code&&nk(old.name)===nk(name)?old.token:'';
     const d=await api('/api/join',{code,name,token:tok});
-    S={...S,code,sid:d.sid,token:d.token,name:d.name,meta:d.meta,items:{},res:{},draft:{},ended:false};
+    S={...S,code,sid:d.sid,token:d.token,name:d.name,meta:d.meta,items:{},res:{},draft:{},ended:false,pf:0};
     sessionStorage.setItem(KEY,JSON.stringify({code,name:d.name,token:d.token}));
     $('meName').textContent=d.name;$('rName').textContent=d.name;$('rav').innerHTML=DSVG;$('bav').innerHTML=DSVG;$('bName').textContent=d.name;S.rq=null;S.rDraft={};S.streak=0;kLoad();$('kName').textContent='👤 '+d.name;connect();
     if(d.meta.mode==='battle'){show('vBattle');S.bq=null;S.bw=0;if(!S.bs)bState({s:'lobby',alive:0,wins:0})}else if(d.meta.mode==='race'){show('vRace');renderRace()}else if(d.meta.kuis){show('vKuis');renderKuis()}else{show('vPlay');render()}
@@ -230,9 +233,9 @@ function connect(){
   es.addEventListener('bduel',e=>bDuel(JSON.parse(e.data)));
   es.addEventListener('bans',e=>bAns(JSON.parse(e.data)));
   es.addEventListener('bend',e=>bEnd(JSON.parse(e.data)));
-  es.addEventListener('hasil',e=>{const d=JSON.parse(e.data);S.pending=false;if(isBattle()){bErr(d);return}if(isRace()){rResult(d);return}if(isKuis()){if(d.err)toast(d.err);return}if(!d.ok&&d.err){toast(d.err);render();return}S.res[d.i]={ok:d.ok};render();if(S.cur===d.i)openQ(d.i)});
+  es.addEventListener('hasil',e=>{const d=JSON.parse(e.data);S.pending=false;if(isBattle()){bErr(d);return}if(isRace()){rResult(d);return}if(isKuis()){if(d.err)toast(d.err);return}if(!d.ok&&d.err){toast(d.err);render();return}S.res[d.i]={ok:d.ok};if(S.cur===d.i)S.cur=-1;render()});
   es.addEventListener('pick',()=>openPick());
-  es.addEventListener('pickdone',e=>{const d=JSON.parse(e.data);closePick();if(d.msg)toast(d.msg)});
+  es.addEventListener('pickdone',e=>{const d=JSON.parse(e.data);closePick()});
   es.addEventListener('end',e=>{S.ended=true;es.close();const d=JSON.parse(e.data);
     $('endH').textContent=d.bt?'Battle selesai':'Kuis selesai';clearInterval(S.btm);
     if(d.bt){$('endT').innerHTML=d.spec?'Battle sudah selesai. Terima kasih sudah menonton!':(d.champ?'🏆 <b style="font-size:1.6rem">KAMU JUARA BATTLE!</b><br>':'')+'Peringkat ke-<b>'+d.rank+'</b>'+(d.stage&&!d.champ?' ('+d.stage+')':'')+' dari <b>'+d.n+'</b><br>Kemenangan: <b>'+d.wins+'</b>'}else
@@ -260,6 +263,7 @@ function render(){
   const o=st&&st.octo;$('octoC').classList.toggle('hide',!o);
   if(o){$('octoN').textContent=(o.icon||'🐙')+' '+(o.name||'Gurita')+(o.n>1?' ('+(o.stage+1)+'/'+o.n+')':'');$('octoT').textContent=o.dead?'Kalah! 🎉':o.hp+' / '+o.max;$('octoF').style.width=(o.hp/o.max*100)+'%'}
   const started=!!(st&&st.st);
+  if(started)prefetchAll();
   $('vWait').classList.toggle('hide',started);
   if(!started){$('vGrid').classList.add('hide');$('vQ').classList.add('hide');return}
   if(S.cur<0)showGrid();else if(!$('vGrid').classList.contains('hide'))drawGrid();
@@ -276,7 +280,7 @@ function drawGrid(){
   }
   $('gInfo').textContent='Maksimal '+S.meta.per+' soal per anak. Putih = masih kosong.';
 }
-function showGrid(){S.cur=-1;$('vQ').classList.add('hide');$('vGrid').classList.remove('hide');drawGrid()}
+function showGrid(){S.cur=-1;$('vQ').classList.add('hide');$('vGrid').classList.remove('hide');drawGrid();window.scrollTo(0,0)}
 async function openQ(i){
   S.cur=i;$('vGrid').classList.add('hide');$('vQ').classList.remove('hide');
   $('qNo').textContent='Soal nomor '+(i+1);$('qBody').innerHTML='<p class="sub">Memuat soal…</p>';
@@ -304,7 +308,7 @@ function syncQ(){
   $('bPesan').disabled=S.pending;$('bKirim').disabled=S.pending||!(S.draft[i]||[]).length;$('bLepas').disabled=S.pending;
   $('qBody').querySelectorAll('.opt').forEach(o=>o.classList.toggle('dis',!isMine||locked));
   const r=$('qRes');
-  if(res){r.className='res '+(res.ok===true?'ok':res.ok===false?'bad':'n');r.textContent=res.ok===true?'✔ Benar!':res.ok===false?'✘ Salah':'✔ Jawaban tersimpan'}
+  if(res){r.className='res '+(res.ok===true?'ok':res.ok===false?'bad':'n');r.textContent=res.ok===true?'✔ Benar!':res.ok===false?'✘ Salah':''}
   else{r.className='';r.textContent=''}
   $('qMsg').textContent=!isMine&&t[i]==null?'Pesan nomor ini dulu supaya kamu bisa menjawab.':locked?'🔒 Jawaban sudah dikirim (hanya satu kesempatan).':isMine?'Pilih jawaban, lalu tekan Kirim. '+(S.meta.battle?'Hanya bisa sekali!':''):'';
 }
@@ -313,7 +317,6 @@ $('bPesan').onclick=async()=>{S.pending=true;syncQ();try{await act('pesan',{i:S.
 $('bLepas').onclick=async()=>{S.pending=true;syncQ();try{await act('lepas',{i:S.cur})}catch(e){S.pending=false;toast(e.message);syncQ()}};
 $('bKirim').onclick=async()=>{
   const i=S.cur,sel=S.draft[i]||[];if(!sel.length)return;
-  if(S.meta.battle&&!confirm('Kirim jawaban? Hanya bisa sekali.'))return;
   S.pending=true;syncQ();try{await act('jawab',{i,sel})}catch(e){S.pending=false;toast(e.message);syncQ()}
 };
 
@@ -387,6 +390,12 @@ function renderRace(){
   if(S.streak>=3)add('🔥 Beruntun '+S.streak);
   if(st&&st.left!=null)add('⏱ '+mmss(st.left));
   if(!S.rq)$('rWait').classList.toggle('hide',!!(st&&st.st));
+}
+function prefetchAll(){
+  if(S.pf||!S.meta||!S.sid)return;S.pf=1;
+  let k=0;const n=S.meta.n,sid=S.sid;
+  const w=async()=>{while(k<n&&S.sid===sid){const i=k++;if(S.items[i])continue;try{await getItem(i)}catch(e){}await new Promise(r=>setTimeout(r,80))}};
+  w();w();
 }
 async function getItem(i){
   if(!S.items[i]){const r=await fetch('/api/q?code='+S.code+'&sid='+S.sid+'&token='+S.token+'&i='+i);if(!r.ok)throw 0;S.items[i]=await r.json()}
@@ -496,11 +505,11 @@ function bEnd(d){
 }
 // ---- pilih hadiah ----
 function openPick(){
-  let n=12;$('pickM').classList.remove('hide');clearInterval(S.pickTm);
+  let n=12;$('pickM').classList.remove('hide');document.body.classList.add('picking');clearInterval(S.pickTm);
   const upd=()=>{$('pickS').textContent='Otomatis skill acak dalam '+n+' detik. Dino hanya boleh punya 1 skill.'};upd();
   S.pickTm=setInterval(()=>{n--;if(n<=0)clearInterval(S.pickTm);upd()},1000);
 }
-function closePick(){clearInterval(S.pickTm);$('pickM').classList.add('hide')}
+function closePick(){clearInterval(S.pickTm);$('pickM').classList.add('hide');document.body.classList.remove('picking')}
 $('pAtk').onclick=()=>{act('pilih',{kind:'serang'}).catch(()=>{});closePick()};
 $('pSk').onclick=()=>{act('pilih',{kind:'skill'}).catch(()=>{});closePick()};
 </script>
